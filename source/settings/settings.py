@@ -1,0 +1,109 @@
+from os import getenv
+import sys
+
+from dotenv import load_dotenv
+import logging
+
+
+# Описание хандлера для логгера.
+handler = logging.StreamHandler(sys.stdout)
+formater = logging.Formatter(
+    '%(name)s, %(funcName)s, %(asctime)s, %(levelname)s - %(message)s.'
+)
+handler.setFormatter(formater)
+
+load_dotenv()
+TOKEN = getenv('BOT_TOKEN')
+
+NEEDFUL = [
+    'SECID', 'SHORTNAME', 'PREVPRICE', 'PREVWAPRICE', 'PREVDATE',
+    'STATUS', 'WAPTOPREVWAPRICE', 'UPDATETIME', 'LCURRENTPRICE', 'LAST',
+    'PRICEMINUSPREVWAPRICE', 'DATAUPDATE', 'CURRENCYID', 'TRADINGSESSION',
+    'STATUS_FILTER', 'LASTCHANGEPRCNT', 'WAPRICE', 'LASTCNGTOLASTWAPRICE',
+    'WAPTOPREVWAPRICEPRCNT', 'MARKETPRICE', 'ISSUECAPITALIZATION',
+    'TRENDISSUECAPITALIZATION', 'BOARDID', 'VALUE'
+]
+STATISTIC_NEED = [
+    'SECID', 'STATUS_FILTER', 'LAST', 'FILTER_SCORE', 'VALUE'
+]
+TYPE_DATA_IMOEX = ['securities', 'marketdata']
+SHARE_GROUPS = ['EQBR', 'EQBS', 'EQCC', 'TQBR']
+
+WEIGHTS_PARAM = [
+    'WPTPWP', 'LCP', 'PMPWP_WP', 'TIC_IC', 'LCTLWP_WP', 'LCPRCNT', 'LMP'
+]
+
+# Параметры для вывода сообщений.
+PARAMS_ALL = {
+    'SECID': 'Код',
+    'SHORTNAME': 'Название',
+    'UPDATETIME': 'Время последнего обновления',
+    'LAST': 'Последняя цена (за акцию)',
+    'DATAUPDATE': 'Время последнего обновления базы данных',
+    'CURRENCYID': 'Валюта',
+    'FILTER_SCORE': 'Значение конечной фильтрации',
+    'STATUS_FILTER': 'Статус фильтрации'
+}
+STATUS_UP = 'вероятность роста'
+STATUS_DOWN = 'вероятность падения'
+STOP_TRADING = 'торги приостановлены'
+RUN_TRADING = 'торги идут'
+STATUS_MEDIUM = 'среднее значение'
+SPLIT_SYM = '-'
+
+# URL для получения данных Мосбиржи.
+IMOEX_URL = (
+    'http://iss.moex.com/iss/engines/stock/markets/shares/'
+    'securities.json?iss.json=extended&iss.meta=off'
+)
+
+
+# Итерация работы.
+SET_ITERATION = 60
+TIME_UPDATE = 100
+START_VALUE = 0
+
+# Баллы по параметрам алгоритма.
+WPTPWP_POINTS = 5
+LCP_POINTS = 5
+PMPWP_WP_POINTS = 8
+TIC_IC_POINTS = 10
+LCTLWP_WP_POINTS = 5
+LCPRCNT_POINTS = 5
+LMP_POINTS = 15
+
+# Коэффициенты для работы алгоритма и статистики.
+# Комиссия на оборот.
+COMISSION_COEFF = 0.08 / 100
+INCOME_COEFF = 0.2 / 100
+BUY_COEFF = 0
+MAX_SCORE = (
+    abs(WPTPWP_POINTS) + abs(LCP_POINTS) +
+    abs(PMPWP_WP_POINTS) + abs(TIC_IC_POINTS) +
+    abs(LCTLWP_WP_POINTS) + abs(LCPRCNT_POINTS) +
+    abs(LMP_POINTS)
+)
+# Абстрактное увеличение результата для выборки
+ABSTRACT_COEFF = 1
+# Границы допуска.
+BORDERS_SCORE = 70
+
+SIZE_F_MAX_SCORE_RESULT = 10
+
+STATUS_UP = 'вероятность роста'
+STATUS_DOWN = 'вероятность падения'
+STATUS_MEDIUM = 'среднее значение'
+
+db_connector = getenv('db_connector')
+db_login = getenv('db_login')
+db_password = getenv('db_password')
+db_port = getenv('db_port')
+db_name = getenv('db_name')
+DB_URL = (
+    f'{db_connector}://{db_login}:{db_password}'
+    f'@localhost:{db_port}/{db_name}'
+)
+
+MIN = [-25, 10]
+MAX = [5, 15]
+MED = [-5, 5]
