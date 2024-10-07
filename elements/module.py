@@ -23,7 +23,7 @@ def weights_in_list():
     data = sql.get_all_data(tables.Weights)[0]
     result = []
 
-    for key, value in data[0].items():
+    for key, value in data.items():
         result.append(f'{key}: {value:.3f}')
 
     return result
