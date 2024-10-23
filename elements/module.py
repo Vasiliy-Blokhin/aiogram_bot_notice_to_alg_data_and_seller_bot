@@ -4,10 +4,12 @@ import source.sql.tables as tables
 
 def all_statistic_info(data):
     all_success = 0
+    all_neutral = 0
     all_profit = 0
     for el in data:
         try:
             all_success += el['statistic_prcnt']
+            all_neutral += el['neutral_prcnt']
             all_profit += 100 * el[
                 'potential_profitability'
             ] / el['count_price_after']
@@ -16,7 +18,11 @@ def all_statistic_info(data):
                 return [0, 0]
             else:
                 continue
-    return [all_success / len(data), all_profit / len(data)]
+    return [
+        all_success / len(data),
+        all_profit / len(data),
+        all_neutral / len(data)
+    ]
 
 
 def weights_in_list():
@@ -24,6 +30,8 @@ def weights_in_list():
     result = []
 
     for key, value in data.items():
+        if key == 'id':
+            continue
         result.append(f'{key}: {value:.3f}')
 
     return result

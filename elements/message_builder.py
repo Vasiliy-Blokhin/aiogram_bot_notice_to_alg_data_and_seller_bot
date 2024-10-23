@@ -51,7 +51,8 @@ def last_statistic_message():
     if statistic == []:
         return empty_message()
 
-    last_stat = statistic[-1]['statistic_prcnt']
+    last_positive = statistic[-1]['statistic_prcnt']
+    last_neutral = statistic[-1]['neutral_prcnt']
     try:
         last_profit = 100 * statistic[-1][
             'potential_profitability'
@@ -61,7 +62,8 @@ def last_statistic_message():
 
     message = (
         '📊 Статистическая вероятность за последнюю итерацию:\n\n'
-        f'  👉 Процент совпадения: {(last_stat):.2f} %\n'
+        f'  👉 Процент роста цены: {(last_positive):.2f} %\n'
+        f'  👉 Процент совпадения: {(last_neutral):.2f} %\n'
         f'  👉 Процент прибыли: {last_profit:.2f} %\n\n'
     )
 
@@ -75,7 +77,8 @@ def all_statistic_message():
 
     message = (
         '📊 Средняя статистическая вероятность за все время:\n\n'
-        f'  👉 Процент совпадения: {all_statistic[0]:.2f} %\n'
+        f'  👉 Процент роста цены: {all_statistic[0]:.2f} %\n'
+        f'  👉 Процент совпадения: {all_statistic[2]:.2f} %\n'
         f'  👉 Процент прибыли: {all_statistic[1]:.2f} %\n\n'
     )
 
