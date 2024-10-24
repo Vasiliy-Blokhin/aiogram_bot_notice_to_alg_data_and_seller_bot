@@ -63,7 +63,9 @@ def last_statistic_message():
     message = (
         '📊 Статистическая вероятность за последнюю итерацию:\n\n'
         f'  👉 Процент роста цены: {(last_positive):.2f} %\n'
-        f'  👉 Процент совпадения: {(last_neutral):.2f} %\n'
+        f'  👉 Процент совпадения цены: {(last_neutral):.2f} %\n'
+        '  👉 Процент падения цены: '
+        f'{(100 - last_positive - last_neutral):.2f} %\n'
         f'  👉 Процент прибыли: {last_profit:.2f} %\n\n'
     )
 
@@ -76,9 +78,12 @@ def all_statistic_message():
     )
 
     message = (
-        '📊 Средняя статистическая вероятность за все время:\n\n'
+        '📊 Средняя статистическая вероятность за все время:\n'
+        f'(Количество итераций: {len(all_statistic)})\n\n'
         f'  👉 Процент роста цены: {all_statistic[0]:.2f} %\n'
-        f'  👉 Процент совпадения: {all_statistic[2]:.2f} %\n'
+        f'  👉 Процент совпадения цены: {all_statistic[2]:.2f} %\n'
+        '  👉 Процент падения цены: '
+        f'{(100 - all_statistic[2] - all_statistic[2]):.2f} %\n'
         f'  👉 Процент прибыли: {all_statistic[1]:.2f} %\n\n'
     )
 
