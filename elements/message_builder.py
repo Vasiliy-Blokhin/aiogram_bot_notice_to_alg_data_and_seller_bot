@@ -4,6 +4,7 @@ from source.settings.settings import (
     STATUS_DOWN,
     STATUS_MEDIUM,
     STATUS_UP,
+    BORDERS_SCORE
 )
 from source.sql.main import SQLmain as sql
 import source.sql.tables as tables
@@ -154,7 +155,10 @@ def certain_shares(code):
     """ Сообщение с определенной акцией."""
     message = ''
     for data in sql.get_all_data(tables.FilterData):
-        if data['SECID'] == code:
+        if (
+            data['SECID'] == code
+            and data['FILTER_SCORE'] > BORDERS_SCORE
+        ):
             for key, value in data.items():
                 if key in PARAMS_ALL.keys():
                     message += shares_mess(key, value)
