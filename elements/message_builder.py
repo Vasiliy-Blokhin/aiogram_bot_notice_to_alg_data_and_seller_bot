@@ -74,13 +74,14 @@ def last_statistic_message():
 
 
 def all_statistic_message():
+    data = sql.get_all_data(tables.AllStatistic)
     all_statistic = all_statistic_info(
-        sql.get_all_data(tables.AllStatistic)
+        data=data
     )
 
     message = (
         '📊 Средняя статистическая вероятность за все время:\n'
-        f'(Количество итераций: {len(all_statistic)})\n\n'
+        f'(Количество итераций: {len(data)})\n\n'
         f'  👉 Процент роста цены: {all_statistic[0]:.2f} %\n'
         f'  👉 Процент совпадения цены: {all_statistic[2]:.2f} %\n'
         '  👉 Процент падения цены: '
