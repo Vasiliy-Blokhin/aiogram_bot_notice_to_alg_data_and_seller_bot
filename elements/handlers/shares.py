@@ -168,9 +168,4 @@ async def better_shares_button(callback: types.CallbackQuery):
 async def better_shares_result(callback: types.CallbackQuery):
     """ Вывод сообщения информации о возможных рисках."""
     share = callback.data.split(SPLIT_SYM)[1]
-    await callback.message.answer(
-        f'share - {share}\n'
-        f'all data - {callback.data}'
-    )
     await callback.message.answer(text=certain_shares(share))
-    await callback.message.answer(text='check before')
