@@ -142,8 +142,12 @@ async def better_shares_button(callback: types.CallbackQuery):
     shares = sql.get_all_data(tables.CurrentScore)
     builder = InlineKeyboardBuilder()
     counter = 0
+    sort_data = []
 
     for share in shares:
+        if share['SECID'] in sort_data:
+            continue
+        sort_data.append(share['SECID'])
 
         counter += 1
         builder.add(

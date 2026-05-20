@@ -1,14 +1,20 @@
+import logging
+
 from elements.module import all_statistic_info, weights_in_list
 from source.settings.settings import (
     PARAMS_ALL,
     STATUS_DOWN,
     STATUS_MEDIUM,
     STATUS_UP,
-    BORDERS_SCORE
+    BORDERS_SCORE,
+    handler
 )
 from source.sql.main import SQLmain as sql
 import source.sql.tables as tables
 
+logger = logging.getLogger(name=__name__)  # Запуск логга проекта.
+logger.setLevel(logging.DEBUG)
+logger.addHandler(handler)
 
 # Интерактивные сообщения.
 def trading_info_message():
@@ -16,9 +22,14 @@ def trading_info_message():
     message = (
         '📊 Текущий статус торговли: \n\n👉 '
     )
-    message += sql.get_all_data(tables.PrepareData)[0]['TRADINGSESSION']
+    status = sql.get_all_data(tables.PrepareData)[0]['TRADINGSESSION']
+    match status:
+        case "1": 
+            status = 'торги идут'
+        case "2":
+            status = 'торги приостановлены'
 
-    return message + '.'
+    return message + status + '.'
 
 
 def better_shares_info_message():
@@ -155,11 +166,19 @@ def shares_mess(key, value):
 def certain_shares(code):
     """ Сообщение с определенной акцией."""
     message = ''
+    sort_data = []
     for data in sql.get_all_data(tables.FilterData):
+        if data['SECID'] in sort_data:
+            continue
+        sort_data.append(data['SECID'])
+        logger.info(sort_data)
+
         if (
             data['SECID'] == code
             and data['FILTER_SCORE'] > BORDERS_SCORE
         ):
+
+
             for key, value in data.items():
                 if key in PARAMS_ALL.keys():
                     message += shares_mess(key, value)
