@@ -1,250 +1,209 @@
 import logging
+from datetime import date, datetime
 
-from elements.module import all_statistic_info, weights_in_list
-from source.settings.settings import (
-    PARAMS_ALL,
-    STATUS_DOWN,
-    STATUS_MEDIUM,
-    STATUS_UP,
-    BORDERS_SCORE,
-    handler
-)
+from source.settings.settings import handler, TRADING_MODE
 from source.sql.main import SQLmain as sql
-import source.sql.tables as tables
 
 logger = logging.getLogger(name=__name__)  # Запуск логга проекта.
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
 
-# Интерактивные сообщения.
-def trading_info_message():
-    """ Сообщение с выводом статуса торговли."""
-    message = (
-        '📊 Текущий статус торговли: \n\n👉 '
+STATUS_ICONS = {'approved': '🟢', 'used': '✅', 'rejected': '⛔', 'skipped': '⚪', 'expired': '⌛'}
+
+
+def signals_message():
+    """ Сигналы по последнему закрытию."""
+    rows = sql.query(
+        'SELECT * FROM signals WHERE "SIGNAL_DATE" = (SELECT MAX("SIGNAL_DATE") FROM signals) '
+        'ORDER BY "EXPECTED_RETURN" DESC'
     )
-    status = sql.get_all_data(tables.PrepareData)[0]['TRADINGSESSION']
-    match status:
-        case "1": 
-            status = 'торги идут'
-        case "2":
-            status = 'торги приостановлены'
-
-    return message + status + '.'
-
-
-def better_shares_info_message():
-    '''data = ALL_JC.read_file(file=FILE_SHARES_TO_BUY)
-    message = ''
-    if data == []:
-        return empty_message
-    for share in data:
-        message += share.get('symbol') + ', '
-    return message
-    '''
-    return 'wait seller bot'
-#--------------------------------------------------------
-
-
-def weights_message():
-    """ Сообщение с выводом весов."""
-    if weights_in_list() == []:
+    if not rows:
         return empty_message()
-
-    message = '📊 Текущий коэффициент весов:\n\n'
-    for weight in weights_in_list():
-        message += f'👉 {weight};\n'
-
-    return message
-#--------------------------------------------------------
-
-
-def last_statistic_message():
-    statistic = sql.get_all_data(tables.AllStatistic)
-    if statistic == []:
-        return empty_message()
-
-    last_positive = statistic[-1]['statistic_prcnt']
-    last_neutral = statistic[-1]['neutral_prcnt']
-    try:
-        last_profit = 100 * statistic[-1][
-            'potential_profitability'
-        ] / statistic[-1]['count_price_after']
-    except ZeroDivisionError:
-        last_profit = 0.0
-
-    message = (
-        '📊 Статистическая вероятность за последнюю итерацию:\n\n'
-        f'  👉 Процент роста цены: {(last_positive):.2f} %\n'
-        f'  👉 Процент совпадения цены: {(last_neutral):.2f} %\n'
-        '  👉 Процент падения цены: '
-        f'{(100 - last_positive - last_neutral):.2f} %\n'
-        f'  👉 Процент прибыли: {last_profit:.2f} %\n\n'
-    )
-
-    return message
-
-
-def all_statistic_message():
-    data = sql.get_all_data(tables.AllStatistic)
-    all_statistic = all_statistic_info(
-        data=data
-    )
-
-    message = (
-        '📊 Средняя статистическая вероятность за все время:\n'
-        f'(Количество итераций: {len(data)})\n\n'
-        f'  👉 Процент роста цены: {all_statistic[0]:.2f} %\n'
-        f'  👉 Процент совпадения цены: {all_statistic[2]:.2f} %\n'
-        '  👉 Процент падения цены: '
-        f'{(100 - all_statistic[2] - all_statistic[2]):.2f} %\n'
-        f'  👉 Процент прибыли: {all_statistic[1]:.2f} %\n\n'
-    )
-
-    return message
-#--------------------------------------------------------
-
-
-def shares_score_output_mesage(start, end, max_score, min_score):
-    return (
-        '📝 Параметры запроса:\n\n'
-        f'   👉 Параметр поиска: {PARAMS_ALL["FILTER_SCORE"]};\n'
-        f'   👉 Границы диапозона: {min_score:.2f} - {max_score:.2f};\n'
-        f'   👉 Выбранный диапозон поиска: {start} - {end};\n'
-    )
-
-
-def shares_start_message():
-    return (
-        '📈 Что нужно для работы:\n\n'
-        '   👉 После того как высветятся сообщение о вводе стартового значения '
-        '-> необходимо ввести целое число*;\n'
-        '   👉 После того как высветятся сообщение о вводе конечного значения '
-        '-> необходимо ввести целое число*;\n'
-        '   👉 После того как высветятся список результатов -> необходимо '
-        'нажать на нужную котировку акций;\n\n'
-        '   * Целое число - комбинация цифр, без дополнительных знаков и букв.'
-        '\n\n'
-    )
-
-
-def start_input_message():
-    return (
-        '📝 Введите стартовое значение:'
-    )
-
-
-def end_input_message():
-    return (
-        '📝 Введите конечное значение:'
-    )
-
-
-def better_shares_output_mesage():
-    return '📈 Для получения результата нужно только нажать на кнопку.'
-#--------------------------------------------------------
-
-
-def shares_mess(key, value):
-    """ Шаблон карточки акции."""
-    sym = '☑️' if key == 'SECID' else '🔸'
-    if key == 'STATUS_FILTER' and value == STATUS_UP:
-        sym = '\n🟢'
-    elif key == 'STATUS_FILTER' and value == STATUS_DOWN:
-        sym = '\n🔴'
-    elif key == 'STATUS_FILTER' and value == STATUS_MEDIUM:
-        sym = '\n🟡'
-    if isinstance(value, float):
-        message = f"{sym} {PARAMS_ALL.get(key)}: {value:.2f}.\n"
-    else:
-        message = f"{sym} {PARAMS_ALL.get(key)}: {value}.\n"
-    if key == 'SECID':
+    message = f'📈 Сигналы по закрытию {rows[0]["SIGNAL_DATE"]}:\n\n'
+    for row in rows:
+        message += (
+            f'{STATUS_ICONS.get(row["STATUS"], "🔸")} <b>{row["SECID"]}</b> {row["SHORTNAME"] or ""}\n'
+            f'   вероятность {row["PROBABILITY"]:.0%}, ожидание {row["EXPECTED_RETURN"]:+.2%}\n'
+            f'   стоп {row["STOP_PRICE"]:.4g} / тейк {row["TAKE_PRICE"]:.4g}, '
+            f'удержание {row["HOLD_DAYS"]} дн.\n'
+        )
+        if row['AI_DECISION'] not in (None, 'n/a'):
+            message += f'   🤖 ИИ: {row["AI_DECISION"]} ({row["AI_CONFIDENCE"]}%) {row["AI_REASON"] or ""}\n'
         message += '\n'
-
     return message
 
 
-def certain_shares(code):
-    """ Сообщение с определенной акцией."""
-    message = ''
-    sort_data = []
-    for data in sql.get_all_data(tables.FilterData):
-        if data['SECID'] in sort_data:
-            continue
-        sort_data.append(data['SECID'])
-        logger.info(sort_data)
-
-        if (
-            data['SECID'] == code
-            and data['FILTER_SCORE'] > BORDERS_SCORE
-        ):
-
-
-            for key, value in data.items():
-                if key in PARAMS_ALL.keys():
-                    message += shares_mess(key, value)
-            break
+def portfolio_message():
+    """ Открытые позиции и счёт исполнителя."""
+    positions = sql.query(
+        'SELECT * FROM positions WHERE "MODE" = :mode AND "STATUS" <> :closed AND "STATUS" <> :cancelled',
+        {'mode': TRADING_MODE, 'closed': 'closed', 'cancelled': 'cancelled'},
+    )
+    account = sql.query('SELECT * FROM paper_account LIMIT 1') if TRADING_MODE == 'paper' else []
+    message = f'💼 Портфель ({TRADING_MODE}):\n\n'
+    if account:
+        message += f'Свободные средства: {account[0]["CASH"]:,.0f} ₽ (старт {account[0]["START_CASH"]:,.0f} ₽)\n\n'
+    if not positions:
+        return message + 'Открытых позиций нет.'
+    for row in positions:
+        message += (
+            f'🔸 <b>{row["SECID"]}</b>: {row["QUANTITY"]} шт. по {row["ENTRY_PRICE"]:.4g}\n'
+            f'   стоп {row["STOP_PRICE"]:.4g} / тейк {row["TAKE_PRICE"]:.4g}, выход {row["EXIT_DATE"]}\n'
+        )
     return message
-#--------------------------------------------------------
+
+
+def trades_statistic_message():
+    """ Фактические (paper/live) результаты закрытых сделок."""
+    rows = sql.query(
+        'SELECT "PNL", "PNL_PCT", "EXIT_REASON" FROM positions '
+        'WHERE "MODE" = :mode AND "STATUS" = :closed',
+        {'mode': TRADING_MODE, 'closed': 'closed'},
+    )
+    if not rows:
+        return '📊 Закрытых сделок пока нет.'
+    wins = [row for row in rows if row['PNL'] > 0]
+    total = sum(row['PNL'] for row in rows)
+    average = sum(row['PNL_PCT'] for row in rows) / len(rows)
+    reasons = {}
+    for row in rows:
+        reasons[row['EXIT_REASON']] = reasons.get(row['EXIT_REASON'], 0) + 1
+    return (
+        f'📊 Сделки исполнителя ({TRADING_MODE}):\n\n'
+        f'  👉 Сделок: {len(rows)}, прибыльных {len(wins) / len(rows):.0%}\n'
+        f'  👉 Средняя сделка: {average:+.2%}\n'
+        f'  👉 Итог: {total:+,.0f} ₽\n'
+        f'  👉 Выходы: ' + ', '.join(f'{k} — {v}' for k, v in reasons.items())
+    )
+
+
+def backtest_message():
+    """ Последний бэктест по каждой стратегии."""
+    rows = sql.query(
+        'SELECT * FROM backtest_runs WHERE id IN '
+        '(SELECT MAX(id) FROM backtest_runs GROUP BY "STRATEGY") ORDER BY "SHARPE" DESC'
+    )
+    if not rows:
+        return '📊 Бэктест ещё не запускался.'
+    message = f'🧪 Бэктест {rows[0]["PERIOD_START"]} — {rows[0]["PERIOD_END"]}:\n\n'
+    for row in rows:
+        message += (
+            f'<b>{row["STRATEGY"]}</b>: сделок {row["TRADES"]}, прибыльных {row["WIN_RATE"]:.0%}, '
+            f'средняя {row["AVG_TRADE"]:+.2%}, итог {row["TOTAL_RETURN"]:+.1%}, '
+            f'просадка {row["MAX_DRAWDOWN"]:.1%}, Sharpe {row["SHARPE"]:.2f}\n\n'
+        )
+    return message
+
+
+def services_message():
+    """ Когда сервисы последний раз подавали признаки жизни."""
+    rows = sql.query('SELECT * FROM activity')
+    if not rows:
+        return '⚙️ Сервисы ещё не запускались.'
+    message = '⚙️ Состояние сервисов:\n\n'
+    for row in rows:
+        last = datetime.fromisoformat(str(row['LAST_TIME']))
+        minutes = (datetime.now() - last).total_seconds() / 60
+        icon = '🟢' if minutes < 10 else '🔴'
+        message += f'{icon} {row["SERVICE"]}: {minutes:.0f} мин. назад\n'
+    return message
+
+
+def daily_report_message(day: date | None = None):
+    """ Итоги торгового дня: сделки, результат, капитал, сигналы на завтра."""
+    day = day or date.today()
+    params = {'mode': TRADING_MODE, 'start': f'{day} 00:00:00', 'end': f'{day} 23:59:59'}
+    opened = sql.query(
+        'SELECT * FROM positions WHERE "MODE" = :mode AND "ENTRY_TIME" BETWEEN :start AND :end',
+        params,
+    )
+    closed = sql.query(
+        'SELECT * FROM positions WHERE "MODE" = :mode AND "STATUS" = :closed '
+        'AND "EXIT_TIME" BETWEEN :start AND :end',
+        {**params, 'closed': 'closed'},
+    )
+    all_closed = sql.query(
+        'SELECT "PNL" FROM positions WHERE "MODE" = :mode AND "STATUS" = :closed',
+        {'mode': TRADING_MODE, 'closed': 'closed'},
+    )
+    open_positions = sql.query(
+        'SELECT * FROM positions WHERE "MODE" = :mode AND "STATUS" = :open',
+        {'mode': TRADING_MODE, 'open': 'open'},
+    )
+    account = sql.query('SELECT * FROM paper_account LIMIT 1') if TRADING_MODE == 'paper' else []
+
+    message = f'📅 <b>Итоги дня {day:%d.%m.%Y}</b> ({TRADING_MODE})\n\n'
+    if opened:
+        message += '🟢 Куплено:\n' + ''.join(
+            f'   {row["SECID"]}: {row["QUANTITY"]} шт. по {row["ENTRY_PRICE"]:.4g}\n' for row in opened
+        )
+    if closed:
+        message += '🔴 Продано:\n' + ''.join(
+            f'   {row["SECID"]} ({row["EXIT_REASON"]}): {row["PNL"]:+,.0f} ₽ ({row["PNL_PCT"]:+.2%})\n'
+            for row in closed
+        )
+        message += f'   Результат дня: {sum(row["PNL"] for row in closed):+,.0f} ₽\n'
+    if not opened and not closed:
+        message += 'Сделок сегодня не было.\n'
+
+    invested = sum(row['QUANTITY'] * row['ENTRY_PRICE'] for row in open_positions)
+    message += f'\n💼 Открыто позиций: {len(open_positions)} на {invested:,.0f} ₽\n'
+    if account:
+        cash, start_cash = account[0]['CASH'], account[0]['START_CASH']
+        equity = cash + invested
+        message += (
+            f'💰 Капитал (позиции по цене входа): {equity:,.0f} ₽, свободно {cash:,.0f} ₽\n'
+            f'📈 С начала: {equity - start_cash:+,.0f} ₽ ({equity / start_cash - 1:+.2%})\n'
+        )
+    if all_closed:
+        wins = sum(1 for row in all_closed if row['PNL'] > 0)
+        message += (
+            f'📊 Всего сделок: {len(all_closed)}, прибыльных {wins / len(all_closed):.0%}, '
+            f'итог {sum(row["PNL"] for row in all_closed):+,.0f} ₽\n'
+        )
+    signals = sql.query(
+        'SELECT "SECID", "STATUS" FROM signals '
+        'WHERE "SIGNAL_DATE" = (SELECT MAX("SIGNAL_DATE") FROM signals)'
+    )
+    approved = [row['SECID'] for row in signals if row['STATUS'] == 'approved']
+    message += '\n🔭 Сигналы: ' + (', '.join(approved) if approved else 'нет')
+    return message
 
 
 # Системные сообщения.
 def empty_message():
-    return '📝 Извините, но файл пустой.'
+    return '📝 Сигналов пока нет.'
 
 
-def empty_output_message():
-    return '📝 Извините, но нет результата на ваш запрос.'
-
-
-def error_message():
-    """ Информация об ошибке."""
-    return (
-        '❗️ Читай внимательнее инструкцию "/информация".'
-    )
-
-
-# Информационные сообщения
 def start_message(name):
     """ Стартовое сообщение."""
-    hello_message = (
-        f'👋Приветсвую, {name}!\n\n '
+    return (
+        f'👋 Приветствую, {name}!\n\n'
+        '💰📈 Бот показывает сигналы алгоритма на 1–2 дня по акциям Мосбиржи, '
+        'портфель исполнителя и статистику.\n\n'
+        'Перед работой ознакомьтесь с информацией "/информация" ❗️'
     )
-    disclaimer_message = (
-        '💰📈 Бот предоставляет прогнозы по акциям с анализом роста/падения.\n\n'
-        'Перед работой обязательно ознакомтесь с дополнительной информации '
-        '"/информация"❗️\n\n'
-    )
-    return hello_message + disclaimer_message
 
 
 def info_message():
     """ Сообщение общей информации."""
-    message = (
-        '📊 Информация о боте финансовой аналитики\n\n'
-        '💸 Наш бот использует данные с Мосбиржи, анализирует их с '
-        'помощью алгоритмов '
-        'технического анализа и предоставляет прогнозы по акциям '
-        '(рост или падение), чтобы помочь вам увеличить свой капитал.'
-        '\n\n'
-        '⚠️ Обратите внимание, что мы не несем ответственности за '
-        'последствия ваших '
-        'решений. Помните о возможных рисках, связанных с самой '
-        'природой экономики. Ознакомтесь с рисками подробнее'
-        '\n\n'
-        '✍️ Автор (разработчик): @Vasilianin\n'
-        '🤝 Если у вас есть какие-либо вопросы или предложения, '
-        'пожалуйста, свяжитесь со мной.'
-            )
-    return message
+    return (
+        '📊 Как это работает\n\n'
+        '💸 Каждое утро движок загружает дневные свечи Мосбиржи, модель (логистическая '
+        'регрессия, переобучается на скользящем окне) оценивает вероятность прибыли '
+        'сделки на 1–2 дня, локальный ИИ проверяет кандидатов на явные риски '
+        '(отсечки дивидендов, негатив в новостях).\n\n'
+        '⚠️ Это не инвестиционная рекомендация. Мы не несём ответственности за '
+        'последствия ваших решений.\n\n'
+        '✍️ Автор (разработчик): @Vasilianin'
+    )
 
 
 def risk_message():
     """ Сообщение о возможных рисках."""
-    message = (
+    return (
         '📊 Возможные риски (учтите их при работе).\n\n'
-        '⚠️ Информация может потерять актуальность из-за задережек данных, '
-        'отправляемых Мосбиржей. Поэтому внимательно следите за временными '
-        'показателями.\n⚠️ Любой алгоритм не может дать 100% гарантии на '
-        'результат (но к этому стремлюсь, поэтому он усовершенствуется).'
+        '⚠️ Данные ISS публичные и идут с задержкой 15 минут.\n'
+        '⚠️ Результаты бэктеста не гарантируют будущей доходности.\n'
+        '⚠️ Стоп-лосс исполняется по рыночной цене и при гэпе может сработать хуже уровня.'
     )
-    return message

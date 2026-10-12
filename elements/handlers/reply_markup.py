@@ -3,11 +3,13 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
+from source.sql.main import SQLmain as sql
 from elements.message_builder import (
-    weights_message,
-    trading_info_message,
     start_message,
-    better_shares_info_message
+    signals_message,
+    portfolio_message,
+    services_message,
+    daily_report_message,
 )
 
 
@@ -17,46 +19,41 @@ router = Router()
 @router.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
     """
-    Стартовый набор команд (сообщений).
+    Стартовый набор команд (сообщений) + подписка на отчёты и уведомления о сделках.
     """
+    sql.add_subscriber(message.chat.id, message.from_user.full_name)
     builder = ReplyKeyboardBuilder()
-    builder.row(  # Вывод информации о весах.
-        types.KeyboardButton(text='/информация',)
-    )
-    builder.add(  # Вывод информации о весах.
-        types.KeyboardButton(text='/веса',)
-    )
-    builder.row(  # Вывод информации о статистике.
-        types.KeyboardButton(text='/статистика')
-    )
-    builder.add(  # Вывод информации о статусе торговли.
-        types.KeyboardButton(text='/статус')
-    )
-    builder.row(  # Вывод информации о статусе торговли.
-        types.KeyboardButton(text='/акции')
-    )
-    builder.add(  # Вывод информации о статусе торговли.
-        types.KeyboardButton(text='/выборка')
-    )
+    builder.row(types.KeyboardButton(text='/сигналы'))
+    builder.add(types.KeyboardButton(text='/портфель'))
+    builder.row(types.KeyboardButton(text='/статистика'))
+    builder.add(types.KeyboardButton(text='/статус'))
+    builder.row(types.KeyboardButton(text='/отчёт'))
+    builder.add(types.KeyboardButton(text='/информация'))
     await message.answer(  # Сообщение старт.
         start_message(message.from_user.first_name),
         reply_markup=builder.as_markup(resize_keyboard=True),
     )
 
 
-@router.message(F.text.lower() == '/веса')
-async def weights_button(message: types.Message):
-    """ Вывод сообщения - общей информации."""
-    await message.reply(weights_message())
+@router.message(F.text.lower() == '/сигналы')
+async def signals_button(message: types.Message):
+    """ Сигналы по последнему закрытию."""
+    await message.reply(signals_message())
+
+
+@router.message(F.text.lower() == '/портфель')
+async def portfolio_button(message: types.Message):
+    """ Позиции исполнителя."""
+    await message.reply(portfolio_message())
 
 
 @router.message(F.text.lower() == '/статус')
-async def trading_info_button(message: types.Message):
-    """ Вывод сообщения - общей информации."""
-    await message.reply(trading_info_message())
+async def services_button(message: types.Message):
+    """ Состояние сервисов."""
+    await message.reply(services_message())
 
 
-@router.message(F.text.lower() == '/выборка')
-async def better_share_button(message: types.Message):
-    """ Вывод сообщения - общей информации."""
-    await message.reply(better_shares_info_message())
+@router.message(F.text.lower().in_({'/отчёт', '/отчет'}))
+async def report_button(message: types.Message):
+    """ Итоги сегодняшнего дня (то же, что приходит автоматически в REPORT_TIME)."""
+    await message.reply(daily_report_message())

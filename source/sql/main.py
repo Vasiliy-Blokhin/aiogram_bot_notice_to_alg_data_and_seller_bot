@@ -1,54 +1,56 @@
-from dotenv import load_dotenv
-
+""" Общая БД: чтение данных сервисов + собственные таблицы бота (подписчики, состояние)."""
 import sqlalchemy as sa
-from sqlalchemy.orm import Session
 
-from source.sql.tables import Base
 from source.settings.settings import DB_URL
-load_dotenv()
 
 
-main_engine = sa.create_engine(
-    DB_URL,
-    echo=False
-)
+main_engine = sa.create_engine(DB_URL, echo=False)
 
 
 class SQLmain:
 
     @staticmethod
-    def create_all_tables():
-        Base.metadata.create_all(bind=main_engine)
+    def query(command: str, params: dict | None = None) -> list[dict]:
+        try:
+            with main_engine.connect() as connection:
+                return [dict(row) for row in connection.execute(sa.text(command), params or {}).mappings()]
+        except sa.exc.OperationalError:
+            # Таблицы ещё не созданы (сервисы не запускались).
+            return []
 
     @staticmethod
-    def insert_data(data, table):
-        with Session(bind=main_engine) as s:
-            Base.metadata.drop_all(
-                    bind=main_engine,
-                    tables=[table.__table__]
-                )
-            Base.metadata.create_all(
-                bind=main_engine,
-                tables=[table.__table__]
-            )
+    def execute(command: str, params: dict | None = None):
+        with main_engine.begin() as connection:
+            connection.execute(sa.text(command), params or {})
 
-            s.execute(sa.insert(table).values(data))
-            s.commit()
+    @classmethod
+    def create_bot_tables(cls):
+        cls.execute(
+            'CREATE TABLE IF NOT EXISTS tg_subscribers '
+            '(CHAT_ID INTEGER PRIMARY KEY, NAME TEXT, CREATED_AT TEXT)'
+        )
+        cls.execute('CREATE TABLE IF NOT EXISTS bot_state (KEY TEXT PRIMARY KEY, VALUE TEXT)')
 
-    @staticmethod
-    def append_data(data, table):
-        with Session(bind=main_engine) as s:
-            s.execute(sa.insert(table).values(data))
-            s.commit()
+    @classmethod
+    def add_subscriber(cls, chat_id: int, name: str):
+        cls.execute(
+            "INSERT OR IGNORE INTO tg_subscribers VALUES (:chat_id, :name, datetime('now', 'localtime'))",
+            {'chat_id': chat_id, 'name': name},
+        )
 
-    @staticmethod
-    def get_all_data(table):
-        with Session(bind=main_engine) as s:
-            result = s.execute(
-                sa.select('*').select_from(table)
-            ).all()
+    @classmethod
+    def subscribers(cls) -> list[int]:
+        return [row['CHAT_ID'] for row in cls.query('SELECT CHAT_ID FROM tg_subscribers')]
 
-            data = []
-            for el in result:
-                data.append(el._asdict())
-            return data
+    @classmethod
+    def get_state(cls, key: str) -> str | None:
+        rows = cls.query('SELECT VALUE FROM bot_state WHERE KEY = :key', {'key': key})
+        return rows[0]['VALUE'] if rows else None
+
+    @classmethod
+    def set_state(cls, key: str, value: str):
+        cls.execute(
+            'INSERT INTO bot_state VALUES (:key, :value) '
+            'ON CONFLICT(KEY) DO UPDATE SET VALUE = excluded.VALUE',
+            {'key': key, 'value': value},
+        )
