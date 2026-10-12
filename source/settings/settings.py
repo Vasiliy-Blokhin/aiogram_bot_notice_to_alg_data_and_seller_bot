@@ -1,9 +1,13 @@
 from os import getenv
+from pathlib import Path
+import logging
 import sys
 
 from dotenv import load_dotenv
-import logging
 
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(BASE_DIR / '.env')
 
 # Описание хандлера для логгера.
 handler = logging.StreamHandler(sys.stdout)
@@ -12,98 +16,18 @@ formater = logging.Formatter(
 )
 handler.setFormatter(formater)
 
-load_dotenv()
-TOKEN = getenv('BOT_TOKEN')
-
-NEEDFUL = [
-    'SECID', 'SHORTNAME', 'PREVPRICE', 'PREVWAPRICE', 'PREVDATE',
-    'STATUS', 'WAPTOPREVWAPRICE', 'UPDATETIME', 'LCURRENTPRICE', 'LAST',
-    'PRICEMINUSPREVWAPRICE', 'DATAUPDATE', 'CURRENCYID', 'TRADINGSESSION',
-    'STATUS_FILTER', 'LASTCHANGEPRCNT', 'WAPRICE', 'LASTCNGTOLASTWAPRICE',
-    'WAPTOPREVWAPRICEPRCNT', 'MARKETPRICE', 'ISSUECAPITALIZATION',
-    'TRENDISSUECAPITALIZATION', 'BOARDID', 'VALUE'
-]
-STATISTIC_NEED = [
-    'SECID', 'STATUS_FILTER', 'LAST', 'FILTER_SCORE', 'VALUE'
-]
-TYPE_DATA_IMOEX = ['securities', 'marketdata']
-SHARE_GROUPS = ['EQBR', 'EQBS', 'EQCC', 'TQBR']
-
-WEIGHTS_PARAM = [
-    'WPTPWP', 'LCP', 'PMPWP_WP', 'TIC_IC', 'LCTLWP_WP', 'LCPRCNT', 'LMP'
-]
-
-# Параметры для вывода сообщений.
-PARAMS_ALL = {
-    'SECID': 'Код',
-    'SHORTNAME': 'Название',
-    'UPDATETIME': 'Время последнего обновления',
-    'LAST': 'Последняя цена (за акцию)',
-    'DATAUPDATE': 'Время последнего обновления базы данных',
-    'CURRENCYID': 'Валюта',
-    'FILTER_SCORE': 'Значение конечной фильтрации',
-    'STATUS_FILTER': 'Статус фильтрации'
+TOKEN = getenv('BOT_TOKEN') or ''
+# Telegram id пользователей с доступом (через запятую). Пусто — доступ у всех.
+ALLOWED_USERS = {
+    int(user) for user in (getenv('ALLOWED_USERS') or '').split(',') if user.strip()
 }
-STATUS_UP = 'вероятность роста'
-STATUS_DOWN = 'вероятность падения'
-STOP_TRADING = 'торги приостановлены'
-RUN_TRADING = 'торги идут'
-STATUS_MEDIUM = 'среднее значение'
-SPLIT_SYM = '-'
 
-# URL для получения данных Мосбиржи.
-IMOEX_URL = (
-    'http://iss.moex.com/iss/engines/stock/markets/shares/'
-    'securities.json?iss.json=extended&iss.meta=off'
-)
+# Общая БД движка сигналов и исполнителя.
+DATA_DIR = Path(getenv('DATA_DIR') or BASE_DIR.parent / 'data')
+DB_URL = getenv('DB_URL') or f'sqlite:///{(DATA_DIR / "trading.db").as_posix()}'
 
+TRADING_MODE = (getenv('TRADING_MODE') or 'paper').lower()
 
-# Итерация работы.
-SET_ITERATION = 60
-TIME_UPDATE = 100
-START_VALUE = 0
-
-# Баллы по параметрам алгоритма.
-WPTPWP_POINTS = 5
-LCP_POINTS = 5
-PMPWP_WP_POINTS = 8
-TIC_IC_POINTS = 10
-LCTLWP_WP_POINTS = 5
-LCPRCNT_POINTS = 5
-LMP_POINTS = 15
-
-# Коэффициенты для работы алгоритма и статистики.
-# Комиссия на оборот.
-COMISSION_COEFF = 0.08 / 100
-INCOME_COEFF = 0.2 / 100
-BUY_COEFF = 0
-MAX_SCORE = (
-    abs(WPTPWP_POINTS) + abs(LCP_POINTS) +
-    abs(PMPWP_WP_POINTS) + abs(TIC_IC_POINTS) +
-    abs(LCTLWP_WP_POINTS) + abs(LCPRCNT_POINTS) +
-    abs(LMP_POINTS)
-)
-# Абстрактное увеличение результата для выборки
-ABSTRACT_COEFF = 1
-# Границы допуска.
-BORDERS_SCORE = 50
-
-SIZE_F_MAX_SCORE_RESULT = 10
-
-STATUS_UP = 'вероятность роста'
-STATUS_DOWN = 'вероятность падения'
-STATUS_MEDIUM = 'среднее значение'
-
-db_connector = getenv('db_connector')
-db_login = getenv('db_login')
-db_password = getenv('db_password')
-db_port = getenv('db_port')
-db_name = getenv('db_name')
-DB_URL = (
-    f'{db_connector}://{db_login}:{db_password}'
-    f'@localhost:{db_port}/{db_name}'
-)
-
-MIN = [-25, 10]
-MAX = [5, 15]
-MED = [-5, 5]
+# Ежедневный отчёт по итогам основной сессии (МСК, часы.минуты), только будни.
+REPORT_TIME = float(getenv('REPORT_TIME') or 19.00)
+TIMEZONE = 'Europe/Moscow'
