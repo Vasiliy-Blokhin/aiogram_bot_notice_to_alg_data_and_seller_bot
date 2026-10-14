@@ -17,6 +17,7 @@ STRATEGY_TITLES = {
     'trend_pullback': 'Откат в тренде',
     'squeeze': 'Сжатие волатильности',
     'capitulation': 'Отскок после паники',
+    'reverse': 'Реверсивный (опыт + новости)',
 }
 STATUS_ICONS = {'approved': '🟢', 'used': '✅', 'rejected': '⛔', 'skipped': '⚪', 'expired': '⌛'}
 
