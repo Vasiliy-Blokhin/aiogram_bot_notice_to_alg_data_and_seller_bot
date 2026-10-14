@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import date, datetime
 
@@ -8,6 +9,16 @@ logger = logging.getLogger(name=__name__)  # Запуск логга проек�
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
 
+STRATEGY_TITLES = {
+    'model': 'Модель',
+    'mean_reversion': 'Откат RSI(2)',
+    'momentum': 'Импульс 5 дн.',
+    'breakout': 'Пробой максимума',
+    'trend_pullback': 'Откат в тренде',
+    'squeeze': 'Сжатие волатильности',
+    'capitulation': 'Отскок после паники',
+    'reverse': 'Реверсивный (опыт + новости)',
+}
 STATUS_ICONS = {'approved': '🟢', 'used': '✅', 'rejected': '⛔', 'skipped': '⚪', 'expired': '⌛'}
 
 
@@ -109,6 +120,42 @@ def services_message():
     return message
 
 
+def allocation_text():
+    """ Текущее распределение капитала по стратегиям."""
+    rows = sql.query('SELECT * FROM strategy_selection ORDER BY "DATE" DESC LIMIT 1')
+    if not rows:
+        return '🧭 Распределение по стратегиям ещё не рассчитано.\n'
+    allocation = json.loads(rows[0].get('ALLOCATION') or '{}')
+    if not allocation:
+        return f'🧭 Торговля приостановлена: {rows[0]["REASON"]}\n'
+    return '🧭 Доли капитала: ' + ', '.join(
+        f'{STRATEGY_TITLES.get(name, name)} {share:.0%}' for name, share in allocation.items()
+    ) + '\n'
+
+
+def strategies_message():
+    """ Теневая статистика стратегий за день/неделю/месяц и текущее распределение."""
+    rows = sql.query(
+        'SELECT * FROM strategy_stats WHERE "DATE" = (SELECT MAX("DATE") FROM strategy_stats)'
+    )
+    if not rows:
+        return '📊 Статистика стратегий ещё не рассчитана.'
+    table = {}
+    for row in rows:
+        table.setdefault(row['STRATEGY'], {})[row['PERIOD']] = row
+    order = sorted(table, key=lambda name: -table[name]['week']['RETURN'])
+    message = (
+        f'📊 <b>Стратегии</b> (теневая торговля, по {rows[0]["DATE"]})\n'
+        'результат в % капитала (число сделок): день / неделя / месяц\n\n'
+    )
+    for name in order:
+        periods = table[name]
+        message += f'<b>{STRATEGY_TITLES.get(name, name)}</b>\n   ' + ' / '.join(
+            f'{periods[p]["RETURN"]:+.2%} ({periods[p]["TRADES"]})' for p in ('day', 'week', 'month')
+        ) + '\n'
+    return message + '\n' + allocation_text()
+
+
 def daily_report_message(day: date | None = None):
     """ Итоги торгового дня: сделки, результат, капитал, сигналы на завтра."""
     day = day or date.today()
@@ -166,7 +213,8 @@ def daily_report_message(day: date | None = None):
         'WHERE "SIGNAL_DATE" = (SELECT MAX("SIGNAL_DATE") FROM signals)'
     )
     approved = [row['SECID'] for row in signals if row['STATUS'] == 'approved']
-    message += '\n🔭 Сигналы: ' + (', '.join(approved) if approved else 'нет')
+    message += '\n' + allocation_text()
+    message += '🔭 Сигналы: ' + (', '.join(approved) if approved else 'нет')
     return message
 
 

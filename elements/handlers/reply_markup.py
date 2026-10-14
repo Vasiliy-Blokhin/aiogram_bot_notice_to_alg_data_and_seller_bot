@@ -10,6 +10,7 @@ from elements.message_builder import (
     portfolio_message,
     services_message,
     daily_report_message,
+    strategies_message,
 )
 
 
@@ -28,7 +29,8 @@ async def command_start_handler(message: Message) -> None:
     builder.row(types.KeyboardButton(text='/статистика'))
     builder.add(types.KeyboardButton(text='/статус'))
     builder.row(types.KeyboardButton(text='/отчёт'))
-    builder.add(types.KeyboardButton(text='/информация'))
+    builder.add(types.KeyboardButton(text='/стратегии'))
+    builder.row(types.KeyboardButton(text='/информация'))
     await message.answer(  # Сообщение старт.
         start_message(message.from_user.first_name),
         reply_markup=builder.as_markup(resize_keyboard=True),
@@ -57,3 +59,9 @@ async def services_button(message: types.Message):
 async def report_button(message: types.Message):
     """ Итоги сегодняшнего дня (то же, что приходит автоматически в REPORT_TIME)."""
     await message.reply(daily_report_message())
+
+
+@router.message(F.text.lower() == '/стратегии')
+async def strategies_button(message: types.Message):
+    """ Статистика стратегий и распределение капитала."""
+    await message.reply(strategies_message())
