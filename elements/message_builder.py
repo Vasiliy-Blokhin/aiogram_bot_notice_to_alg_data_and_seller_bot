@@ -1,5 +1,6 @@
 import json
 import logging
+from html import escape
 from datetime import date, datetime
 
 from source.settings.settings import handler, TRADING_MODE
@@ -18,8 +19,30 @@ STRATEGY_TITLES = {
     'squeeze': 'Сжатие волатильности',
     'capitulation': 'Отскок после паники',
     'reverse': 'Реверсивный (опыт + новости)',
+    'rotation': 'Ротация фондов',
 }
 STATUS_ICONS = {'approved': '🟢', 'used': '✅', 'rejected': '⛔', 'skipped': '⚪', 'expired': '⌛'}
+EVOLVE_LIVE_STAGES = 3  # столько лучших этапов движок держит действующими (EVOLVE_LIVE_STAGES движка)
+ACTIVE_STATUSES = ('opening', 'open', 'closing')
+REVERSE_NOTABLE = ('promote', 'death', 'params', 'mode', 'reflection')
+
+
+def strategy_title(name: str | None) -> str:
+    """ Название стратегии (в т.ч. составной: 'momentum+reverse', 'evolve:12+15')."""
+    titles = []
+    for part in (name or '').split('+'):
+        if part.startswith('evolve:'):
+            titles.append(f'Геномный этап #{part[7:]}')
+        elif part.isdigit():
+            titles.append(f'#{part}')
+        else:
+            titles.append(STRATEGY_TITLES.get(part, part))
+    return ' + '.join(titles)
+
+
+def atoms_text(atoms_json: str) -> str:
+    """ Условия правила реверсивного алгоритма: [[признак, знак, порог], ...] -> текст."""
+    return ' и '.join(f'{f} {op} {v:.4g}' for f, op, v in json.loads(atoms_json))
 
 
 def signals_message():
@@ -34,6 +57,7 @@ def signals_message():
     for row in rows:
         message += (
             f'{STATUS_ICONS.get(row["STATUS"], "🔸")} <b>{row["SECID"]}</b> {row["SHORTNAME"] or ""}\n'
+            f'   🧩 {strategy_title(row["STRATEGY"])}, доля {row["WEIGHT"] or 0:.1%}\n'
             f'   вероятность {row["PROBABILITY"]:.0%}, ожидание {row["EXPECTED_RETURN"]:+.2%}\n'
             f'   стоп {row["STOP_PRICE"]:.4g} / тейк {row["TAKE_PRICE"]:.4g}, '
             f'удержание {row["HOLD_DAYS"]} дн.\n'
@@ -58,8 +82,10 @@ def portfolio_message():
         return message + 'Открытых позиций нет.'
     for row in positions:
         message += (
-            f'🔸 <b>{row["SECID"]}</b>: {row["QUANTITY"]} шт. по {row["ENTRY_PRICE"]:.4g}\n'
-            f'   стоп {row["STOP_PRICE"]:.4g} / тейк {row["TAKE_PRICE"]:.4g}, выход {row["EXIT_DATE"]}\n'
+            f'🔸 <b>{row["SECID"]}</b>: {row["QUANTITY"]} шт. по {row["ENTRY_PRICE"]:.4g} '
+            f'[{strategy_title(row["STRATEGY"])}]\n'
+            + (f'   стоп {row["STOP_PRICE"]:.4g} / тейк {row["TAKE_PRICE"]:.4g}, выход {row["EXIT_DATE"]}\n'
+               if row['STOP_PRICE'] is not None else '   без стопа и срока (портфель фондов)\n')
         )
     return message
 
@@ -96,10 +122,15 @@ def backtest_message():
     )
     if not rows:
         return '📊 Бэктест ещё не запускался.'
+    # Этапы геномного меняются: показываем только прогнанные в последнем бэктесте.
+    last_end = max(str(row['PERIOD_END']) for row in rows)
+    rows = [row for row in rows
+            if not row['STRATEGY'].startswith('evolve:') or str(row['PERIOD_END']) == last_end]
     message = f'🧪 Бэктест {rows[0]["PERIOD_START"]} — {rows[0]["PERIOD_END"]}:\n\n'
     for row in rows:
+        note = ' (без архива новостей)' if row['STRATEGY'] == 'reverse' else ''
         message += (
-            f'<b>{row["STRATEGY"]}</b>: сделок {row["TRADES"]}, прибыльных {row["WIN_RATE"]:.0%}, '
+            f'<b>{strategy_title(row["STRATEGY"])}</b>{note}: сделок {row["TRADES"]}, прибыльных {row["WIN_RATE"]:.0%}, '
             f'средняя {row["AVG_TRADE"]:+.2%}, итог {row["TOTAL_RETURN"]:+.1%}, '
             f'просадка {row["MAX_DRAWDOWN"]:.1%}, Sharpe {row["SHARPE"]:.2f}\n\n'
         )
@@ -214,8 +245,147 @@ def daily_report_message(day: date | None = None):
     )
     approved = [row['SECID'] for row in signals if row['STATUS'] == 'approved']
     message += '\n' + allocation_text()
+    message += algorithms_brief()
     message += '🔭 Сигналы: ' + (', '.join(approved) if approved else 'нет')
     return message
+
+
+def algo_positions_text(pattern: str) -> str:
+    """ Сделки исполнителя по стратегиям, подходящим под LIKE-шаблон."""
+    rows = sql.query(
+        'SELECT "STATUS", "PNL" FROM positions WHERE "MODE" = :mode AND "STRATEGY" LIKE :pattern',
+        {'mode': TRADING_MODE, 'pattern': pattern},
+    )
+    if not rows:
+        return f'💼 Позиций исполнителя ({TRADING_MODE}) ещё не было.\n'
+    active = sum(1 for row in rows if row['STATUS'] in ACTIVE_STATUSES)
+    closed = [row for row in rows if row['STATUS'] == 'closed']
+    message = f'💼 Позиции ({TRADING_MODE}): открыто {active}, закрыто {len(closed)}'
+    if closed:
+        wins = sum(1 for row in closed if row['PNL'] > 0)
+        total = sum(row['PNL'] for row in closed)
+        message += f', прибыльных {wins / len(closed):.0%}, итог {total:+,.0f} ₽'
+    return message + '\n'
+
+
+def last_signals(pattern: str) -> list[dict]:
+    """ Сигналы последнего дня по стратегиям, подходящим под LIKE-шаблон."""
+    return sql.query(
+        'SELECT "SECID", "STRATEGY", "STATUS", "WEIGHT" FROM signals '
+        'WHERE "SIGNAL_DATE" = (SELECT MAX("SIGNAL_DATE") FROM signals) AND "STRATEGY" LIKE :pattern',
+        {'pattern': pattern},
+    )
+
+
+def reverse_state() -> dict:
+    """ Состояние жизненного цикла реверсивного алгоритма."""
+    rows = sql.query(
+        'SELECT "PARAMS" FROM algo_params WHERE "KIND" = :kind AND "ACTIVE" ORDER BY id DESC LIMIT 1',
+        {'kind': 'reverse_state'},
+    )
+    return json.loads(rows[0]['PARAMS']) if rows else {}
+
+
+def percent(value) -> str:
+    return f'{value:+.1%}' if value is not None else '—'
+
+
+def evolve_message():
+    """ Геномный (абстрактный) алгоритм: этапы, поиск, сигналы и сделки."""
+    stages = sql.query('SELECT * FROM evolve_stages WHERE "ACTIVE" ORDER BY "SCORE" DESC LIMIT :n',
+                       {'n': EVOLVE_LIVE_STAGES})
+    if not stages:
+        return '🧬 Геномный алгоритм ещё не нашёл ни одного этапа.'
+    runs = sql.query('SELECT COUNT(*) AS n, MAX("CREATED_AT") AS last FROM evolve_runs')
+    total = runs[0]['n'] if runs else 0
+    last = str(runs[0]['last'] or '—')[:16] if runs else '—'
+    message = (
+        '🧬 <b>Геномный (абстрактный) алгоритм</b>\n'
+        'Случайный поиск геномов по воскресеньям; этап фиксируется при CAGR ≥ 5% '
+        'и на периоде поиска, и на отложенном последнем году.\n\n'
+        f'Проверено геномов: {total}, последний поиск: {last}\n'
+        f'Действующие этапы — только топ-{EVOLVE_LIVE_STAGES}: {len(stages)} '
+        '(▶️, исполнитель берёт их только в paper)\n\n'
+    )
+    for stage in stages:
+        genome = json.loads(stage['GENOME'])
+        exit_gene, size = genome['exit'][0], genome['size'][0]
+        message += (
+            f'▶️ <b>#{stage["id"]}</b>: '
+            f'поиск {percent(stage["CAGR"])} (DD {stage["MAX_DRAWDOWN"]:.1%}, сделок {stage["TRADES"]}), '
+            f'отложенная {percent(stage["HOLD_CAGR"])}\n'
+            f'   выход: удержание {exit_gene["hold"]} дн., стоп {exit_gene["stop"]:g} / '
+            f'тейк {exit_gene["take"]:g} ATR{", на открытии" if exit_gene.get("at_open") else ""}; '
+            f'до {size["top"]} бумаг\n'
+        )
+    signals = last_signals('evolve:%')
+    message += '\n🔭 Сигналы последнего дня: ' + (
+        ', '.join(f'{row["SECID"]} ({strategy_title(row["STRATEGY"])}, {row["WEIGHT"]:.1%})'
+                  for row in signals)
+        or 'нет (фильтры этапов не пропустили бумаги)'
+    )
+    return message + '\n' + algo_positions_text('evolve:%')
+
+
+def reverse_message():
+    """ Реверсивный алгоритм: режим, правила, выбор, журнал и сделки."""
+    state = reverse_state()
+    counts = {row['STATUS']: row['n'] for row in sql.query(
+        'SELECT "STATUS", COUNT(*) AS n FROM reverse_rules GROUP BY "STATUS"')}
+    if not state and not counts:
+        return '🔄 Реверсивный алгоритм ещё не запускался.'
+    news = state.get('news_weight')
+    news_text = f'{news:+.4f}' if isinstance(news, (int, float)) else '—'
+    mode = ('🟢 торгует' if state.get('trading')
+            else '🌑 в тени (своя история за 63 дн. пока не в плюсе — сделки виртуальные)')
+    message = (
+        '🔄 <b>Реверсивный алгоритм</b> (опыт + новости)\n'
+        'Правила выводятся из исходов прошлых сделок и торгуют только после подтверждения '
+        'вне выборки; новости оценивает qwen36, ночью gpt-oss-20b разбирает итоги.\n\n'
+        f'Режим: {mode}\n'
+        f'Правила: живых {counts.get("live", 0)}, кандидатов {counts.get("candidate", 0)}, '
+        f'умерших {counts.get("dead", 0)}; строгость {state.get("level", "—")}, '
+        f'вес новостей {news_text}\n'
+        f'Прожит день: {state.get("last_day", "—")}\n'
+    )
+    rules = sql.query(
+        'SELECT "ATOMS", "OOS_N", "OOS_MEAN" FROM reverse_rules '
+        'WHERE "STATUS" = :status ORDER BY "POST" DESC LIMIT 5',
+        {'status': 'live'},
+    )
+    if rules:
+        message += '\n📐 Живые правила:\n' + ''.join(
+            f'   • {escape(atoms_text(row["ATOMS"]))} — вне выборки {row["OOS_N"] or 0} дн., '
+            f'средняя {row["OOS_MEAN"] or 0:+.2%}\n' for row in rules)
+    picks = sql.query(
+        'SELECT "DATE", "SECID", "REAL" FROM reverse_picks '
+        'WHERE "DATE" = (SELECT MAX("DATE") FROM reverse_picks)'
+    )
+    if picks:
+        message += f'\n🎯 Выбор по закрытию {picks[0]["DATE"]}: ' + ', '.join(
+            row['SECID'] + ('' if row['REAL'] else ' (тень)') for row in picks) + '\n'
+    kinds = ', '.join(f"'{kind}'" for kind in REVERSE_NOTABLE)
+    journal = sql.query(
+        f'SELECT "DATE", "KIND", "TEXT" FROM reverse_journal '
+        f'WHERE "KIND" IN ({kinds}) ORDER BY id DESC LIMIT 5'
+    )
+    if journal:
+        message += '\n📓 Журнал:\n' + ''.join(
+            f'   {row["DATE"]} {row["KIND"]}: {escape(row["TEXT"][:200])}\n' for row in journal)
+    return message + '\n' + algo_positions_text('%reverse%')
+
+
+def algorithms_brief() -> str:
+    """ Строки о геномном и реверсивном алгоритмах для дневного отчёта."""
+    stages = sql.query('SELECT COUNT(*) AS n FROM evolve_stages WHERE "ACTIVE"')
+    count = min(stages[0]['n'], EVOLVE_LIVE_STAGES) if stages else 0
+    evolve = [row['SECID'] for row in last_signals('evolve:%')]
+    reverse = [row['SECID'] for row in last_signals('%reverse%')]
+    mode = 'торгует' if reverse_state().get('trading') else 'в тени'
+    return (
+        f'🧬 Геномный: этапов {count} (топ-{EVOLVE_LIVE_STAGES}), сигналы: {", ".join(evolve) or "нет"}\n'
+        f'🔄 Реверсивный: {mode}, сигналы: {", ".join(reverse) or "нет"}\n'
+    )
 
 
 # Системные сообщения.
@@ -241,6 +411,10 @@ def info_message():
         'регрессия, переобучается на скользящем окне) оценивает вероятность прибыли '
         'сделки на 1–2 дня, локальный ИИ проверяет кандидатов на явные риски '
         '(отсечки дивидендов, негатив в новостях).\n\n'
+        '🧬 Геномный алгоритм сам ищет комбинации фильтров, оценок и правил выхода '
+        '(случайная эволюция геномов) и торгует лучшими найденными этапами.\n\n'
+        '🔄 Реверсивный алгоритм выводит правила из исходов прошлых сделок, учитывает '
+        'новости и сам себя корректирует; торгует, только когда его история в плюсе.\n\n'
         '⚠️ Это не инвестиционная рекомендация. Мы не несём ответственности за '
         'последствия ваших решений.\n\n'
         '✍️ Автор (разработчик): @Vasilianin'
