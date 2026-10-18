@@ -17,6 +17,9 @@ formater = logging.Formatter(
 handler.setFormatter(formater)
 
 TOKEN = getenv('BOT_TOKEN') or ''
+# Отдельный бот для отчётов: в нём нужно один раз нажать /start.
+REPORT_TOKEN = getenv('TLG_REPORT_TOKEN') or ''
+REPORT_CHAT_ID = getenv('TLG_REPORT_CHAT_ID') or ''
 # Telegram id пользователей с доступом (через запятую). Пусто — доступ у всех.
 ALLOWED_USERS = {
     int(user) for user in (getenv('ALLOWED_USERS') or '').split(',') if user.strip()

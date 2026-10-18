@@ -7,6 +7,8 @@ from elements.message_builder import (
     info_message,
     trades_statistic_message,
     backtest_message,
+    evolve_message,
+    reverse_message,
 )
 
 router = Router()
@@ -58,5 +60,30 @@ async def trades_statistic_callback(callback: types.CallbackQuery):
 async def backtest_callback(callback: types.CallbackQuery):
     """ Результаты бэктеста."""
     await callback.message.answer(text=backtest_message())
+    await callback.answer()
+#--------------------------------------------------------
+
+
+# Клавиатура геномного и реверсивного алгоритмов.
+@router.message(Command('алгоритмы'))
+async def algorithms_keyboard(message: types.Message):
+    """ Выбор алгоритма."""
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text='🧬 Геномный', callback_data='algo_evolve'))
+    builder.row(types.InlineKeyboardButton(text='🔄 Реверсивный', callback_data='algo_reverse'))
+    await message.answer('Выберите алгоритм: ', reply_markup=builder.as_markup())
+
+
+@router.callback_query(F.data == 'algo_evolve')
+async def algo_evolve_callback(callback: types.CallbackQuery):
+    """ Этапы, сигналы и сделки геномного алгоритма."""
+    await callback.message.answer(text=evolve_message())
+    await callback.answer()
+
+
+@router.callback_query(F.data == 'algo_reverse')
+async def algo_reverse_callback(callback: types.CallbackQuery):
+    """ Режим, правила, журнал и сделки реверсивного алгоритма."""
+    await callback.message.answer(text=reverse_message())
     await callback.answer()
 #--------------------------------------------------------
