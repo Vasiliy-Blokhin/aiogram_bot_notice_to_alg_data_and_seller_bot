@@ -24,7 +24,16 @@ STRATEGY_TITLES = {
 STATUS_ICONS = {'approved': '🟢', 'used': '✅', 'rejected': '⛔', 'skipped': '⚪', 'expired': '⌛'}
 EVOLVE_LIVE_STAGES = 3  # столько лучших этапов движок держит действующими (EVOLVE_LIVE_STAGES движка)
 ACTIVE_STATUSES = ('opening', 'open', 'closing')
+EXIT_TITLES = {
+    'stop': 'стоп', 'take': 'тейк', 'time': 'по времени', 'manual': 'вручную',
+    'rebalance': 'ребалансировка', 'market': 'падение рынка', 'review': 'ухудшение динамики',
+    'stale': 'мала вероятность роста', 'max_age': 'слишком долго открыта',
+}
 REVERSE_NOTABLE = ('promote', 'death', 'params', 'mode', 'reflection')
+
+
+def exit_title(reason: str | None) -> str:
+    return EXIT_TITLES.get(reason, reason or '—')
 
 
 def strategy_title(name: str | None) -> str:
@@ -110,7 +119,7 @@ def trades_statistic_message():
         f'  👉 Сделок: {len(rows)}, прибыльных {len(wins) / len(rows):.0%}\n'
         f'  👉 Средняя сделка: {average:+.2%}\n'
         f'  👉 Итог: {total:+,.0f} ₽\n'
-        f'  👉 Выходы: ' + ', '.join(f'{k} — {v}' for k, v in reasons.items())
+        f'  👉 Выходы: ' + ', '.join(f'{exit_title(k)} — {v}' for k, v in reasons.items())
     )
 
 
@@ -164,6 +173,30 @@ def allocation_text():
     ) + '\n'
 
 
+def pool_rows() -> list[dict]:
+    """ Пул стратегий последнего дня, по убыванию приоритета."""
+    return sql.query(
+        'SELECT * FROM strategy_pool WHERE "DATE" = (SELECT MAX("DATE") FROM strategy_pool) '
+        'ORDER BY "PRIORITY" DESC'
+    )
+
+
+def pool_text() -> str:
+    """ Состав пула и приоритеты: бэктест и исполненные сделки."""
+    rows = pool_rows()
+    if not rows:
+        return '⭐ Пул стратегий ещё не рассчитан.\n'
+    message = (f'⭐ <b>Пул стратегий</b> ({rows[0]["DATE"]}): приоритет '
+               '(средняя сделка бэктеста; исполненных сделок)\n')
+    for row in rows:
+        backtest = (f'{row["BT_AVG"]:+.2%}, {row["BT_TRADES"]} сд.' if row['BT_AVG'] is not None
+                    else 'нет бэктеста')
+        real = (f'; исполнено {row["REAL_TRADES"]}, ср. {row["REAL_AVG"]:+.2%}' if row['REAL_TRADES']
+                else '')
+        message += f'   ×{row["PRIORITY"]:.2f} {strategy_title(row["STRATEGY"])} ({backtest}{real})\n'
+    return message
+
+
 def strategies_message():
     """ Теневая статистика стратегий за день/неделю/месяц и текущее распределение."""
     rows = sql.query(
@@ -184,7 +217,7 @@ def strategies_message():
         message += f'<b>{STRATEGY_TITLES.get(name, name)}</b>\n   ' + ' / '.join(
             f'{periods[p]["RETURN"]:+.2%} ({periods[p]["TRADES"]})' for p in ('day', 'week', 'month')
         ) + '\n'
-    return message + '\n' + allocation_text()
+    return message + '\n' + allocation_text() + '\n' + pool_text()
 
 
 def daily_report_message(day: date | None = None):
@@ -217,7 +250,7 @@ def daily_report_message(day: date | None = None):
         )
     if closed:
         message += '🔴 Продано:\n' + ''.join(
-            f'   {row["SECID"]} ({row["EXIT_REASON"]}): {row["PNL"]:+,.0f} ₽ ({row["PNL_PCT"]:+.2%})\n'
+            f'   {row["SECID"]} ({exit_title(row["EXIT_REASON"])}): {row["PNL"]:+,.0f} ₽ ({row["PNL_PCT"]:+.2%})\n'
             for row in closed
         )
         message += f'   Результат дня: {sum(row["PNL"] for row in closed):+,.0f} ₽\n'
@@ -246,6 +279,10 @@ def daily_report_message(day: date | None = None):
     approved = [row['SECID'] for row in signals if row['STATUS'] == 'approved']
     message += '\n' + allocation_text()
     message += algorithms_brief()
+    top = pool_rows()[:3]
+    if top:
+        message += '⭐ Приоритет: ' + ', '.join(
+            f'{strategy_title(row["STRATEGY"])} ×{row["PRIORITY"]:.2f}' for row in top) + '\n'
     message += '🔭 Сигналы: ' + (', '.join(approved) if approved else 'нет')
     return message
 
