@@ -338,8 +338,9 @@ def evolve_message():
     last = str(runs[0]['last'] or '—')[:16] if runs else '—'
     message = (
         '🧬 <b>Геномный (абстрактный) алгоритм</b>\n'
-        'Случайный поиск геномов по воскресеньям; этап фиксируется при CAGR ≥ 5% '
-        'и на периоде поиска, и на отложенном последнем году.\n\n'
+        'Поиск геномов: воскресенье, пн–сб 09–10 и по /поиск. Этап фиксируется при CAGR ≥ 5% '
+        'на периоде поиска и на контроле (не хуже вытесняемого); слепая проверка — последние '
+        '60 торговых дней — только для сведения, в отборе не участвует.\n\n'
         f'Проверено геномов: {total}, последний поиск: {last}\n'
         f'Действующие этапы — только топ-{EVOLVE_LIVE_STAGES}: {len(stages)} '
         '(▶️, исполнитель берёт их только в paper)\n\n'
@@ -350,7 +351,10 @@ def evolve_message():
         message += (
             f'▶️ <b>#{stage["id"]}</b>: '
             f'поиск {percent(stage["CAGR"])} (DD {stage["MAX_DRAWDOWN"]:.1%}, сделок {stage["TRADES"]}), '
-            f'отложенная {percent(stage["HOLD_CAGR"])}\n'
+            f'контроль {percent(stage["HOLD_CAGR"])} ({stage["HOLD_TRADES"]} сд.)'
+            + (f', слепая проверка {stage["BLIND_RETURN"]:+.1%} ({stage["BLIND_TRADES"]} сд.)'
+               if stage.get('BLIND_RETURN') is not None else '')
+            + '\n'
             f'   выход: удержание {exit_gene["hold"]} дн., стоп {exit_gene["stop"]:g} / '
             f'тейк {exit_gene["take"]:g} ATR{", на открытии" if exit_gene.get("at_open") else ""}; '
             f'до {size["top"]} бумаг\n'
