@@ -23,6 +23,7 @@ from elements.message_builder import daily_report_message
 from elements.handlers import (
     reply_markup,
     inline_markup,
+    tasks_markup,
 )
 
 
@@ -67,12 +68,13 @@ async def main() -> None:
     bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     if ALLOWED_USERS:
-        for router in (reply_markup.router, inline_markup.router):
+        for router in (reply_markup.router, inline_markup.router, tasks_markup.router):
             router.message.filter(F.from_user.id.in_(ALLOWED_USERS))
             router.callback_query.filter(F.from_user.id.in_(ALLOWED_USERS))
     dp.include_routers(
         reply_markup.router,
         inline_markup.router,
+        tasks_markup.router,
     )
     report_bot = None
     if REPORT_TOKEN:

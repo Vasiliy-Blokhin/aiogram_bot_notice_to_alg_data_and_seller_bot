@@ -131,7 +131,6 @@ def backtest_message():
     )
     if not rows:
         return '📊 Бэктест ещё не запускался.'
-    # Этапы геномного меняются: показываем только прогнанные в последнем бэктесте.
     last_end = max(str(row['PERIOD_END']) for row in rows)
     rows = [row for row in rows
             if not row['STRATEGY'].startswith('evolve:') or str(row['PERIOD_END']) == last_end]
@@ -139,9 +138,9 @@ def backtest_message():
     for row in rows:
         note = ' (без архива новостей)' if row['STRATEGY'] == 'reverse' else ''
         message += (
-            f'<b>{strategy_title(row["STRATEGY"])}</b>{note}: сделок {row["TRADES"]}, прибыльных {row["WIN_RATE"]:.0%}, '
-            f'средняя {row["AVG_TRADE"]:+.2%}, итог {row["TOTAL_RETURN"]:+.1%}, '
-            f'просадка {row["MAX_DRAWDOWN"]:.1%}, Sharpe {row["SHARPE"]:.2f}\n\n'
+            f'<b>{strategy_title(row["STRATEGY"])}</b>{note}: сделок {row["TRADES"]}, '
+            f'прибыльных {row["WIN_RATE"]:.0%}, '
+            f'просадка {row["MAX_DRAWDOWN"]:.1%}, итог {row["TOTAL_RETURN"]:+.1%}\n'
         )
     return message
 
@@ -152,12 +151,33 @@ def services_message():
     if not rows:
         return '⚙️ Сервисы ещё не запускались.'
     message = '⚙️ Состояние сервисов:\n\n'
+    jobs = []
     for row in rows:
         last = datetime.fromisoformat(str(row['LAST_TIME']))
         minutes = (datetime.now() - last).total_seconds() / 60
+        if row['SERVICE'] in JOBS:
+            jobs.append((row, minutes))
+            continue
         icon = '🟢' if minutes < 10 else '🔴'
         message += f'{icon} {row["SERVICE"]}: {minutes:.0f} мин. назад\n'
+    for row, minutes in jobs:
+        # Разовая задача, а не сервис: отмечается после каждого шага (шаг — до ~10 мин.).
+        text = row['MESSAGE'] or ''
+        if text == 'готово' or text.endswith(' 20/20') and minutes > 15:
+            state = f'✅ готово {age(minutes)} назад'
+        elif minutes < 15:
+            state = f'▶️ идёт ({text})'
+        else:
+            state = f'⚪ не запущен (последний раз {age(minutes)} назад)'
+        message += f'\n{JOBS[row["SERVICE"]]}: {state}'
     return message
+
+
+JOBS = {'blind_full': '🕶 Слепой тест'}  # разовые задачи в таблице activity
+
+
+def age(minutes: float) -> str:
+    return f'{minutes:.0f} мин.' if minutes < 120 else f'{minutes / 60:.0f} ч.'
 
 
 def allocation_text():
@@ -217,7 +237,20 @@ def strategies_message():
         message += f'<b>{STRATEGY_TITLES.get(name, name)}</b>\n   ' + ' / '.join(
             f'{periods[p]["RETURN"]:+.2%} ({periods[p]["TRADES"]})' for p in ('day', 'week', 'month')
         ) + '\n'
-    return message + '\n' + allocation_text() + '\n' + pool_text()
+    return message + '\n' + regime_line()
+
+
+def regime_line() -> str:
+    """ Одна строка: режим рынка и стратегии его пула (вместо долей, приоритетов и алгоритмов)."""
+    from elements.regime_messages import REGIMES, label, safe
+    rows = safe('SELECT REGIME FROM market_regime ORDER BY "DATE" DESC LIMIT 1')
+    if not rows:
+        return ''
+    key = rows[0]['REGIME']
+    emoji, title = REGIMES.get(key, ('', key))
+    pool = safe('SELECT STRATEGY FROM regime_pools WHERE ACTIVE AND REGIME = :r ORDER BY RANK', {'r': key})
+    return (f'{emoji} Режим: {title}; стратегии: '
+            + (', '.join(label(row['STRATEGY']) for row in pool) or 'только фонды') + '\n')
 
 
 def daily_report_message(day: date | None = None):
@@ -277,13 +310,8 @@ def daily_report_message(day: date | None = None):
         'WHERE "SIGNAL_DATE" = (SELECT MAX("SIGNAL_DATE") FROM signals)'
     )
     approved = [row['SECID'] for row in signals if row['STATUS'] == 'approved']
-    message += '\n' + allocation_text()
-    message += algorithms_brief()
-    top = pool_rows()[:3]
-    if top:
-        message += '⭐ Приоритет: ' + ', '.join(
-            f'{strategy_title(row["STRATEGY"])} ×{row["PRIORITY"]:.2f}' for row in top) + '\n'
-    message += '🔭 Сигналы: ' + (', '.join(approved) if approved else 'нет')
+    message += '\n' + regime_line()
+    message += '🔭 Сигналы на завтра: ' + (', '.join(approved) if approved else 'нет')
     return message
 
 
@@ -328,44 +356,28 @@ def percent(value) -> str:
 
 
 def evolve_message():
-    """ Геномный (абстрактный) алгоритм: этапы, поиск, сигналы и сделки."""
-    stages = sql.query('SELECT * FROM evolve_stages WHERE "ACTIVE" ORDER BY "SCORE" DESC LIMIT :n',
-                       {'n': EVOLVE_LIVE_STAGES})
+    """ Геномный алгоритм коротко: лучшие общие этапы и этапы режимов с итогом на реальном счёте."""
+    stages = sql.query('SELECT * FROM evolve_stages WHERE "ACTIVE" '
+                       'ORDER BY PERIOD_SCORE IS NULL, PERIOD_SCORE DESC, "SCORE" DESC')
     if not stages:
         return '🧬 Геномный алгоритм ещё не нашёл ни одного этапа.'
-    runs = sql.query('SELECT COUNT(*) AS n, MAX("CREATED_AT") AS last FROM evolve_runs')
-    total = runs[0]['n'] if runs else 0
-    last = str(runs[0]['last'] or '—')[:16] if runs else '—'
-    message = (
-        '🧬 <b>Геномный (абстрактный) алгоритм</b>\n'
-        'Поиск геномов: воскресенье, пн–сб 09–10 и по /поиск. Этап фиксируется при CAGR ≥ 5% '
-        'на периоде поиска и на контроле (не хуже вытесняемого); слепая проверка — последние '
-        '60 торговых дней — только для сведения, в отборе не участвует.\n\n'
-        f'Проверено геномов: {total}, последний поиск: {last}\n'
-        f'Действующие этапы — только топ-{EVOLVE_LIVE_STAGES}: {len(stages)} '
-        '(▶️, исполнитель берёт их только в paper)\n\n'
-    )
-    for stage in stages:
-        genome = json.loads(stage['GENOME'])
-        exit_gene, size = genome['exit'][0], genome['size'][0]
-        message += (
-            f'▶️ <b>#{stage["id"]}</b>: '
-            f'поиск {percent(stage["CAGR"])} (DD {stage["MAX_DRAWDOWN"]:.1%}, сделок {stage["TRADES"]}), '
-            f'контроль {percent(stage["HOLD_CAGR"])} ({stage["HOLD_TRADES"]} сд.)'
-            + (f', слепая проверка {stage["BLIND_RETURN"]:+.1%} ({stage["BLIND_TRADES"]} сд.)'
-               if stage.get('BLIND_RETURN') is not None else '')
-            + '\n'
-            f'   выход: удержание {exit_gene["hold"]} дн., стоп {exit_gene["stop"]:g} / '
-            f'тейк {exit_gene["take"]:g} ATR{", на открытии" if exit_gene.get("at_open") else ""}; '
-            f'до {size["top"]} бумаг\n'
-        )
+    runs = sql.query('SELECT COUNT(*) AS n FROM evolve_runs')
+    message = f'🧬 <b>Геномный алгоритм</b> — проверено геномов: {runs[0]["n"] if runs else 0}\n'
+    from elements.regime_messages import REGIMES
+    groups = [('', '🌐 Общие')] + [(key, f'{emoji} {title}') for key, (emoji, title) in REGIMES.items()]
+    for key, title in groups:
+        own = [row for row in stages if (row.get('REGIME') or '') == key][:EVOLVE_LIVE_STAGES]
+        if not own:
+            continue
+        parts = []
+        for row in own:
+            periods = json.loads(row.get('PERIODS') or '{}')
+            year, five = periods.get('1y', {}), periods.get('5y', {})
+            parts.append(f'#{row["id"]} год {year.get("TOTAL_RETURN", 0):+.0%}, 5 лет {five.get("TOTAL_RETURN", 0):+.0%}')
+        message += f'{title}: ' + '; '.join(parts) + '\n'
     signals = last_signals('evolve:%')
-    message += '\n🔭 Сигналы последнего дня: ' + (
-        ', '.join(f'{row["SECID"]} ({strategy_title(row["STRATEGY"])}, {row["WEIGHT"]:.1%})'
-                  for row in signals)
-        or 'нет (фильтры этапов не пропустили бумаги)'
-    )
-    return message + '\n' + algo_positions_text('evolve:%')
+    message += '🔭 Сигналы: ' + (', '.join(row['SECID'] for row in signals) or 'нет') + '\n'
+    return message + algo_positions_text('evolve:%')
 
 
 def reverse_message():

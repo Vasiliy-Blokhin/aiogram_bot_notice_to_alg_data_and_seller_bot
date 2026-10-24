@@ -30,6 +30,8 @@ async def command_start_handler(message: Message) -> None:
     builder.add(types.KeyboardButton(text='/статус'))
     builder.row(types.KeyboardButton(text='/отчёт'))
     builder.add(types.KeyboardButton(text='/стратегии'))
+    builder.row(types.KeyboardButton(text='/режим'))
+    builder.add(types.KeyboardButton(text='/запуск'))
     builder.row(types.KeyboardButton(text='/алгоритмы'))
     builder.add(types.KeyboardButton(text='/информация'))
     await message.answer(  # Сообщение старт.
